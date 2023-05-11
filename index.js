@@ -30,6 +30,7 @@ app.get('/', function (req, res) {
 const storage = multer.diskStorage({
 
   //destination is used to determine within which folder the uploaded files should be stored
+  // You are responsible for creating the directory when providing destination as a function
   destination: (req, file, cb) => {
     cb(null, './uploads/');
   },
