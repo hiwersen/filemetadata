@@ -1,11 +1,29 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const mongoose = require('mongoose');
+const Grid = require('gridfs-stream');
 const multer = require('multer');
+const GridFsStorage = require('multer-gridfs-storage').GridFsStorage;
+
 const app = express();
+
 const port = process.env.PORT || 3000;
+const dbUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/fileMetadata';
+module.exports = dbUri;
 
 app.use(cors());
+
+mongoose.connect(dbUri, { useNewUrlParser: true, useUnifiedTopology: true, });
+const connection = mongoose.connection;
+
+connection.on('error', console.error.bind(console, 'connection error:'));
+
+let gfs;
+connection.once('open', () => {
+  gfs = Grid(connection.db, mongoose.mongo);
+  gfs.collection('uploads');
+});
 
 app.use('/public', express.static(__dirname + '/public'));
 
@@ -13,31 +31,13 @@ app.get('/', function (req, res) {
   res.sendFile(__dirname + '/views/index.html');
 });
 
-/**
- * Multer is a node.js middleware for handling multipart/form-data, which is primarily used for uploading files
- * Multer will not process any form which is not multipart (multipart/form-data)
- * <form enctype="multipart/form-data" method="POST" action="/api/fileanalyse">
- * 
- * @see {@link https://github.com/expressjs/multer#multer---}+
- * 
- * Configure the diskStorage engine as the storage option to be passsed to Multer
- * There are two options available, destination and filename
- * They are both functions that determine where the file should be stored 
- * Each function gets passed both the request (req) and some information about the file (file) to aid with the decision
- * 
- * see {@link https://github.com/expressjs/multer#diskstorage}+
- */
-const storage = multer.diskStorage({
-
-  //destination is used to determine within which folder the uploaded files should be stored
-  // You are responsible for creating the directory when providing destination as a function
-  destination: (req, file, cb) => {
-    cb(null, './uploads/');
-  },
-
-  //filename is used to determine what the file should be named inside the folder
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname);
+const storage = new GridFsStorage({
+  url: dbUri,
+  file: (req, file) => {
+    return {
+      filename: file.originalname,
+      bucketName: 'uploads',
+    };
   },
 });
 
@@ -67,3 +67,4 @@ app.post('/api/fileanalyse', upload.single('upfile'), (req, res) => {
 const listener = app.listen(port, function () {
   console.log('Listening on port ' + port)
 });
+
