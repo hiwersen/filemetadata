@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const Grid = require('gridfs-stream');
 const multer = require('multer');
 const GridFsStorage = require('multer-gridfs-storage').GridFsStorage;
 
@@ -12,21 +11,35 @@ const port = process.env.PORT || 3000;
 const dbUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/fileMetadata';
 module.exports = dbUri;
 
+/**
+ * Enable CORS (Cross-origin resource sharing) middleware
+ * so that the API is remotely testable by FreeCodeCamp.
+ * @see {@link https://www.npmjs.com/package/cors}
+ */
 app.use(cors());
 
+// Establish a connection to the MongoDB database using Mongoose with specified options,
 mongoose.connect(dbUri, { useNewUrlParser: true, useUnifiedTopology: true, });
+
+// Retrieve the instance of the active MongoDB connection managed by Mongoose.
 const connection = mongoose.connection;
 
+// Log the connection error to the console, upon 'error' event.
 connection.on('error', console.error.bind(console, 'connection error:'));
 
-let gfs;
+// Log the connection name to the console, upon 'open' event.
 connection.once('open', () => {
-  gfs = Grid(connection.db, mongoose.mongo);
-  gfs.collection('uploads');
+  console.log(`Connected to database: ${connection.name}`); // also: connection.db.databaseName
 });
 
+/**
+ * Serve static files (CSS, JavaScript, images) from the 'public' directory
+ */
 app.use('/public', express.static(__dirname + '/public'));
 
+/**
+ * Handle the root route and serve the index.html file
+ */
 app.get('/', function (req, res) {
   res.sendFile(__dirname + '/views/index.html');
 });
