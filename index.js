@@ -64,19 +64,8 @@ app.get('/', function (req, res) {
   res.sendFile(__dirname + '/views/index.html');
 });
 
-// Instanciate Multer GridFS Storage engine object and set its options.
-const storage = new GridFsStorage({
-  url: dbUri,
-  file: (req, file) => {
-    return {
-      filename: file.originalname,
-      bucketName: 'uploads',
-    };
-  },
-});
-
 // Instanciate Multer object with the specified storage configuration.
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 /**
  * Security feature:
