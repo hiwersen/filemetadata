@@ -1,16 +1,9 @@
+/**
+ * This file sets up an Express.js server that handles file uploads and provides file metadata.
+ */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-
-/**
- * Import Multer.
- * 
- * Multer is a middleware that adds a body object and a file or files object to the request object.
- * The body object contains the values of the text fields of the form
- * while the file or files object contains the file(s) uploaded via the form.
- * 
- * @see {@link https://github.com/expressjs/multer#usage}
- */
 const multer = require('multer');
 
 const app = express();
@@ -36,7 +29,15 @@ app.get('/', function (req, res) {
   res.sendFile(__dirname + '/views/index.html');
 });
 
-// Instanciate Multer object with the specified storage limits options
+/**
+ * Instanciate Multer object and set its storage and limits options
+ * 
+ * Multer is a middleware that adds a body object and a file or files object to the request object.
+ * The body object contains the values of the text fields of the form
+ * while the file or files object contains the file(s) uploaded via the form.
+ * 
+ * @see {@link https://github.com/expressjs/multer#multer---}
+ */
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
@@ -45,89 +46,126 @@ const upload = multer({
 });
 
 /**
- * Security feature:
+ * Use dynamic import (ECMAScript 2020 syntax) to import the 'file-type' module asynchronously in a CommonJS environment.
  * 
- * Create a list of allowed MIME types
+ * The file-type module is for detecting binary-based file extension and MIME type based on its actual content.
+ * After importing the module, retrieve fileTypeFromBuffer function and pass it to the onFulfilled callback.
+ * 
+ * @see {@link https://www.npmjs.com/package/file-type?activeTab=readme}
  */
-const allowedMimeTypes = [
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'text/plain',
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'audio/mpeg',  // For MP3 audio files
-  'video/mp4'    // For MP4 video files
-];
+import('file-type').then(({fileTypeFromBuffer}) => {
+
+  // Add an error check to make sure the fileTypeFromBuffer function is available in the 'file-type' module
+  if (typeof fileTypeFromBuffer === 'undefined') {
+    console.error('fileTypeFromBuffer function is not available');
+    process.exit(1);
+  }
 
 /**
- * Dynamically import file-type.
+ * @api {post} /api/fileanalyse Upload and analyze file
  * 
- * The file-type package is for detecting binary-based file formats, not text-based formats like .txt, .csv, .svg, etc.
+ * @apiParam (Request body) {File} upfile File to upload
+ *
+ * @apiSuccess {String} name Original file name
+ * @apiSuccess {String} type MIME type
+ * @apiSuccess {Number} size Size in bytes
+ *
+ * @apiSuccessExample {json} Success-Response:
+ *     HTTP/1.1 200 OK
+ *     {
+ *       "name": "My Favorite Song.mp3",
+ *       "type": "audio/mpeg",
+ *       "size": 497092
+ *     }
  * 
- * @see {@link https://www.npmjs.com/package/file-type}
+ * @apiError {String} Error message
+ *
+ * @apiErrorExample {String} InvalidFileType:
+ *     HTTP/1.1 400 Bad Request
+ *     Invalid file type
+ * 
+ * @apiError {String} Error message
+ * 
+ * @apiErrorExample {String} MismatchedMimeType:
+ *     HTTP/1.1 400 Bad Request
+ *     File content does not match MIME type
+ * 
+ * @apiError {String} Error message
+ * 
+ * @apiErrorExample {String} UnknownFileType:
+ *     HTTP/1.1 400 Bad Request
+ *     Unable to determine the file type from the content
  */
-import('file-type').then(fileTypeModule => {
-
   app.post('/api/fileanalyse', upload.single('upfile'), async (req, res) => {
-    // req.file.originalname = Name of the file on the user's computer VS 
-    // req.file.filename = The name of the file as stored on the server
+    // Extract name, type, size and buffer data from the uploaded file
     // @see {@link https://github.com/expressjs/multer#file-information}
     const { originalname: name, mimetype: type, size, buffer } = req.file;
+
+    // Define a list of allowed MIME types to create a first layer of security following the deny by default principle
+    const allowedMimeTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'text/plain',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'audio/mpeg',
+      'video/mp4'
+    ];
   
-    // Check if the file's MIME type is in the allow-list
+    // If the file's MIME type is not in the allow-list, return an error message and end the request-response cycle for security purposes
     if (!allowedMimeTypes.includes(type)) {
       return res.status(400).send('Invalid file type');
     } else {
-
   
-      // Determine the file type from a Buffer (file's actual content)
-      ({ fileTypeFromBuffer } = fileTypeModule);
+      // Attempt to detect the file type from the file data buffer
       const fileTypeResult = await fileTypeFromBuffer(buffer);
 
+      
       if (fileTypeResult) {
-        console.log("fileTypeFromBuffer worked: ");
-        console.log(fileTypeResult);
-        console.log("file tipe claimed: " + type);
-
         const { mime: mimeTypeFromBuffer} = fileTypeResult;
+
+        // Return error message if the detected MIME type does not match the file's claimed MIME type
         if (!mimeTypeFromBuffer || mimeTypeFromBuffer !== type) {
           return res.status(400).send('File content does not match MIME type');
         } else {
     
-        // Send a JSON object with the file name, type and size in bytes metadata
+        // If all checks pass, respond with file metadata in JSON format
         res.json({ name, type, size });
         }
       } else {
-        return res.status(400).send('Unable to determine file type from content');
+
+        // Return error message, if fileTypeFromBuffer could not determine the file type
+        return res.status(400).send('Unable to determine the file type from the content');
       }
     }
   });
 
+  /**
+   * Define a general error handling middleware after the routes to catch any errors coming from them
+   */
   app.use((err, req, res, next) => {
     if (err instanceof multer.MulterError) {
-      // Special case for handling Multer errors
-      console.log('multer error');
+      // Handle Multer errors specifically
       return res.status(400).json({ error: err.message });
     } else {
-      // Default case for handling other types of errors
+      // Handle all other types of errors
       return res.status(500).json({ error: 'An unknown error occurred while uploading the file.' });
     }
   });
   
   /**
-   * Start the server and log the listening port
+   * Start the server and log the listening port only after file-type import is executed
    */
   const listener = app.listen(port, () => {
     console.log('Listening on port ' + port)
   });
-
+  
+// Handle error on importing file-type
 }).catch(err => {
-  console.error('Error loading dependencies:' + err);
+  console.error(`Error loading file-type: ${err}`);
   process.exit(1);
 });
-
-
